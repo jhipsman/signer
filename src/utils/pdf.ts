@@ -17,14 +17,15 @@ export async function renderPage(
   page: PDFPageProxy,
   canvas: HTMLCanvasElement,
   scale: number,
-  rotation: number = 0
+  extraRotation: number = 0
 ): Promise<void> {
-  const viewport = page.getViewport({ scale, rotation });
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  canvas.style.width = viewport.width + 'px';
-  canvas.style.height = viewport.height + 'px';
-  const ctx = canvas.getContext('2d')!;
+  const totalRotation = (page.rotate + extraRotation) % 360;
+  const viewport = page.getViewport({ scale, rotation: totalRotation });
+  canvas.width = Math.floor(viewport.width);
+  canvas.height = Math.floor(viewport.height);
+  canvas.style.width = Math.floor(viewport.width) + 'px';
+  canvas.style.height = Math.floor(viewport.height) + 'px';
+  const ctx = canvas.getContext('2d', { willReadFrequently: false })!;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const renderTask = page.render({ canvasContext: ctx, viewport } as any);
   await renderTask.promise;

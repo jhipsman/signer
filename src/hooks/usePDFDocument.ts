@@ -119,6 +119,17 @@ export function usePDFDocument() {
     });
   }, []);
 
+  const rotateAllPages = useCallback((degrees: number) => {
+    setPageRotations((prev) => {
+      const next = new Map(prev);
+      for (let i = 1; i <= totalPages; i++) {
+        const current = next.get(i) || 0;
+        next.set(i, (current + degrees) % 360);
+      }
+      return next;
+    });
+  }, [totalPages]);
+
   return {
     pdfDoc,
     pdfInfo,
@@ -141,5 +152,6 @@ export function usePDFDocument() {
     fileName: fileRef.current?.name || '',
     pageRotations,
     rotatePage,
+    rotateAllPages,
   };
 }

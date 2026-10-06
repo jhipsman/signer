@@ -325,6 +325,12 @@ export default function App() {
               <button className="btn btn-icon btn-sm tooltip" data-tooltip="Rotate Page CCW" onClick={() => pdf.rotatePage(pdf.currentPage, -90)}>
                 <RotateCCWIcon />
               </button>
+              <button className="btn btn-sm tooltip" data-tooltip="Rotate All Pages 90° CW" onClick={() => {
+                pdf.rotateAllPages(90);
+                showToast('All pages rotated 90°');
+              }}>
+                All ↻
+              </button>
               <button className="btn btn-icon btn-sm tooltip" data-tooltip="Delete Page" onClick={handleDeleteCurrentPage}>
                 <TrashIcon />
               </button>

@@ -39,14 +39,16 @@ export default function PDFViewer({
     renderVersionRef.current++;
     const version = renderVersionRef.current;
 
-    const timer = setTimeout(async () => {
+    let rafId: number;
+    const doRender = async () => {
       for (let p = 1; p <= totalPages; p++) {
-        if (version !== renderVersionRef.current) break;
+        if (version !== renderVersionRef.current) return;
         const canvas = canvasRefs.current.get(p);
         if (!canvas) continue;
+        if (!canvas.parentElement || canvas.parentElement.offsetWidth === 0) continue;
         try {
           const page = await pdfDoc.getPage(p);
-          if (version !== renderVersionRef.current) break;
+          if (version !== renderVersionRef.current) return;
           const rotation = pageRotations.get(p) || 0;
           await renderPage(page, canvas, scale, rotation);
           const annCanvas = annotationCanvasRefs.current.get(p);
@@ -63,9 +65,13 @@ export default function PDFViewer({
       if (version === renderVersionRef.current) {
         drawAnnotations();
       }
-    }, 50);
+    };
 
-    return () => clearTimeout(timer);
+    rafId = requestAnimationFrame(() => {
+      doRender();
+    });
+
+    return () => cancelAnimationFrame(rafId);
   }, [pdfDoc, scale, totalPages, pageRotations]);
 
   const drawAnnotations = useCallback(() => {
