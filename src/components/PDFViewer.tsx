@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { renderPage } from '../utils/pdf';
 import type { Annotation, ToolMode } from '../types';
@@ -17,78 +17,61 @@ interface Props {
   fontSize: number;
   opacity: number;
   pageRotations: Map<number, number>;
+  signatureText?: string;
 }
 
 export default function PDFViewer({
   pdfDoc, currentPage, totalPages, scale, activeTool,
   annotations, onAddAnnotation, onPageChange,
   color, strokeWidth, fontSize, opacity, pageRotations,
+  signatureText,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set());
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const annotationCanvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const isDrawing = useRef(false);
   const drawPoints = useRef<Array<{ x: number; y: number }>>([]);
   const drawStartRef = useRef<{ x: number; y: number } | null>(null);
+  const renderVersionRef = useRef(0);
 
   useEffect(() => {
     if (!pdfDoc) return;
-    setRenderedPages(new Set());
-  }, [pdfDoc]);
+    renderVersionRef.current++;
+    const version = renderVersionRef.current;
 
-  const renderPageToCanvas = useCallback(async (pageNum: number) => {
-    if (!pdfDoc || renderedPages.has(pageNum)) return;
-    const canvas = canvasRefs.current.get(pageNum);
-    if (!canvas) return;
-    try {
-      const page = await pdfDoc.getPage(pageNum);
-      const rotation = pageRotations.get(pageNum) || 0;
-      await renderPage(page, canvas, scale, rotation);
-      setRenderedPages((prev) => new Set([...prev, pageNum]));
-    } catch {
-      // page not available
-    }
-  }, [pdfDoc, scale, pageRotations, renderedPages]);
-
-  useEffect(() => {
-    if (!pdfDoc) return;
-    setRenderedPages(new Set());
-    const pagesToRender = [];
-    for (let i = 1; i <= totalPages; i++) {
-      pagesToRender.push(i);
-    }
-    let cancelled = false;
-    (async () => {
-      for (const p of pagesToRender) {
-        if (cancelled) break;
+    const timer = setTimeout(async () => {
+      for (let p = 1; p <= totalPages; p++) {
+        if (version !== renderVersionRef.current) break;
         const canvas = canvasRefs.current.get(p);
         if (!canvas) continue;
         try {
           const page = await pdfDoc.getPage(p);
+          if (version !== renderVersionRef.current) break;
           const rotation = pageRotations.get(p) || 0;
           await renderPage(page, canvas, scale, rotation);
-        } catch {
-          // skip
+          const annCanvas = annotationCanvasRefs.current.get(p);
+          if (annCanvas) {
+            annCanvas.width = canvas.width;
+            annCanvas.height = canvas.height;
+            annCanvas.style.width = canvas.style.width;
+            annCanvas.style.height = canvas.style.height;
+          }
+        } catch (err) {
+          console.error('Render error page', p, err);
         }
       }
-    })();
-    return () => { cancelled = true; };
+      if (version === renderVersionRef.current) {
+        drawAnnotations();
+      }
+    }, 50);
+
+    return () => clearTimeout(timer);
   }, [pdfDoc, scale, totalPages, pageRotations]);
 
-  useEffect(() => {
-    renderAnnotations();
-  }, [annotations, scale]);
-
-  const renderAnnotations = useCallback(() => {
+  const drawAnnotations = useCallback(() => {
     for (const [pageNum, canvas] of annotationCanvasRefs.current) {
       const ctx = canvas.getContext('2d');
       if (!ctx) continue;
-      const pdfCanvas = canvasRefs.current.get(pageNum);
-      if (pdfCanvas) {
-        canvas.width = pdfCanvas.width;
-        canvas.height = pdfCanvas.height;
-      }
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const pageAnnotations = annotations.filter((a) => a.pageNumber === pageNum);
@@ -124,7 +107,7 @@ export default function PDFViewer({
 
           case 'freetext':
             ctx.fillStyle = ann.color;
-            ctx.font = `${(ann.fontSize || 14) * scale}px Inter, sans-serif`;
+            ctx.font = `${(ann.fontSize || 14) * scale}px ${ann.fontFamily || 'Inter'}, sans-serif`;
             ctx.fillText(ann.content || '', ann.x * scale, (ann.y + (ann.fontSize || 14)) * scale);
             break;
 
@@ -142,12 +125,22 @@ export default function PDFViewer({
               }
               ctx.stroke();
             }
+            if (ann.content && ann.type === 'signature') {
+              ctx.fillStyle = ann.color;
+              ctx.font = `italic ${(ann.fontSize || 32) * scale}px 'Dancing Script', 'Brush Script MT', 'Segoe Script', cursive`;
+              ctx.fillText(ann.content, ann.x * scale, (ann.y + (ann.fontSize || 32)) * scale);
+            }
             break;
 
           case 'rectangle':
             ctx.strokeStyle = ann.color;
             ctx.lineWidth = (ann.strokeWidth || 2) * scale;
-            ctx.strokeRect(ann.x * scale, ann.y * scale, (ann.width || 100) * scale, (ann.height || 50) * scale);
+            if (ann.strokeWidth === 0) {
+              ctx.fillStyle = ann.color;
+              ctx.fillRect(ann.x * scale, ann.y * scale, (ann.width || 100) * scale, (ann.height || 50) * scale);
+            } else {
+              ctx.strokeRect(ann.x * scale, ann.y * scale, (ann.width || 100) * scale, (ann.height || 50) * scale);
+            }
             break;
 
           case 'circle':
@@ -158,11 +151,11 @@ export default function PDFViewer({
             const cy = (ann.y + (ann.height || 50) / 2) * scale;
             const rx = ((ann.width || 50) / 2) * scale;
             const ry = ((ann.height || 50) / 2) * scale;
-            ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+            ctx.ellipse(cx, cy, Math.abs(rx), Math.abs(ry), 0, 0, Math.PI * 2);
             ctx.stroke();
             break;
 
-          case 'arrow':
+          case 'arrow': {
             ctx.strokeStyle = ann.color;
             ctx.fillStyle = ann.color;
             ctx.lineWidth = (ann.strokeWidth || 2) * scale;
@@ -183,8 +176,9 @@ export default function PDFViewer({
             ctx.closePath();
             ctx.fill();
             break;
+          }
 
-          case 'sticky-note':
+          case 'sticky-note': {
             const noteSize = 24 * scale;
             ctx.fillStyle = '#fbbf24';
             ctx.fillRect(ann.x * scale, ann.y * scale, noteSize, noteSize);
@@ -192,11 +186,16 @@ export default function PDFViewer({
             ctx.lineWidth = 1;
             ctx.strokeRect(ann.x * scale, ann.y * scale, noteSize, noteSize);
             break;
+          }
         }
         ctx.restore();
       }
     }
   }, [annotations, scale]);
+
+  useEffect(() => {
+    drawAnnotations();
+  }, [drawAnnotations]);
 
   const getCanvasCoords = (e: React.MouseEvent, pageNum: number) => {
     const canvas = annotationCanvasRefs.current.get(pageNum);
@@ -212,6 +211,23 @@ export default function PDFViewer({
     if (activeTool === 'select' || activeTool === 'pan') return;
     const coords = getCanvasCoords(e, pageNum);
     if (!coords) return;
+
+    if (activeTool === 'signature' && signatureText) {
+      onAddAnnotation({
+        id: crypto.randomUUID(),
+        type: 'signature',
+        pageNumber: pageNum,
+        x: coords.x,
+        y: coords.y,
+        content: signatureText,
+        color,
+        opacity,
+        fontSize: 32,
+        fontFamily: "'Dancing Script', cursive",
+        timestamp: Date.now(),
+      });
+      return;
+    }
 
     if (activeTool === 'text') {
       const content = prompt('Enter text:');
@@ -264,7 +280,7 @@ export default function PDFViewer({
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      renderAnnotations();
+      drawAnnotations();
       ctx.strokeStyle = color;
       ctx.lineWidth = strokeWidth * scale;
       ctx.lineCap = 'round';
@@ -282,7 +298,7 @@ export default function PDFViewer({
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      renderAnnotations();
+      drawAnnotations();
       ctx.strokeStyle = activeTool === 'redact' ? '#000' : color;
       ctx.fillStyle = activeTool === 'redact' ? '#000' : 'transparent';
       ctx.lineWidth = strokeWidth * scale;
@@ -444,22 +460,30 @@ export default function PDFViewer({
 
   useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
-    const pageElements = el.querySelectorAll('[data-page]');
+    if (!el || !pdfDoc) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting) {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.3) {
             const p = Number((entry.target as HTMLElement).dataset.page);
             if (p) onPageChange(p);
           }
         }
       },
-      { root: el, threshold: 0.5 }
+      { root: el, threshold: 0.3 }
     );
-    pageElements.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, [totalPages, onPageChange]);
+
+    const timer = setTimeout(() => {
+      const pageElements = el.querySelectorAll('[data-page]');
+      pageElements.forEach((el) => observer.observe(el));
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [totalPages, pdfDoc, onPageChange]);
 
   if (!pdfDoc) return null;
 
@@ -472,10 +496,16 @@ export default function PDFViewer({
         return (
           <div key={pageNum} className="page-wrapper" data-page={pageNum} id={`page-${pageNum}`}>
             <canvas
-              ref={(el) => { if (el) canvasRefs.current.set(pageNum, el); }}
+              ref={(el) => {
+                if (el) canvasRefs.current.set(pageNum, el);
+                else canvasRefs.current.delete(pageNum);
+              }}
             />
             <canvas
-              ref={(el) => { if (el) annotationCanvasRefs.current.set(pageNum, el); }}
+              ref={(el) => {
+                if (el) annotationCanvasRefs.current.set(pageNum, el);
+                else annotationCanvasRefs.current.delete(pageNum);
+              }}
               className={`annotation-layer ${isAnnotationTool ? 'active' : ''}`}
               onMouseDown={(e) => handleMouseDown(e, pageNum)}
               onMouseMove={(e) => handleMouseMove(e, pageNum)}

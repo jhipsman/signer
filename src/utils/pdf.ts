@@ -4,12 +4,13 @@ import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 import type { Annotation, PDFDocumentInfo } from '../types';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.mjs',
+  'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url
 ).toString();
 
 export async function loadPDF(data: ArrayBuffer): Promise<PDFDocumentProxy> {
-  return pdfjsLib.getDocument({ data }).promise;
+  const copy = data.slice(0);
+  return pdfjsLib.getDocument({ data: copy }).promise;
 }
 
 export async function renderPage(
@@ -21,8 +22,12 @@ export async function renderPage(
   const viewport = page.getViewport({ scale, rotation });
   canvas.width = viewport.width;
   canvas.height = viewport.height;
+  canvas.style.width = viewport.width + 'px';
+  canvas.style.height = viewport.height + 'px';
   const ctx = canvas.getContext('2d')!;
-  await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const renderTask = page.render({ canvasContext: ctx, viewport } as any);
+  await renderTask.promise;
 }
 
 export async function getPageText(page: PDFPageProxy): Promise<string> {
@@ -80,7 +85,7 @@ export async function addAnnotationsToPDF(
     const pageIndex = annotation.pageNumber - 1;
     if (pageIndex < 0 || pageIndex >= pages.length) continue;
     const page = pages[pageIndex];
-    const { width, height } = page.getSize();
+    const { height } = page.getSize();
     const { r, g, b } = hexToRgb(annotation.color);
 
     switch (annotation.type) {

@@ -34,7 +34,8 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(true);
   const [dragOver, setDragOver] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [savedSignatures, setSavedSignatures] = useState<string[]>([]);
+  const [savedSignatures, setSavedSignatures] = useState<Array<{ image: string; text?: string }>>([]);
+  const [pendingSignatureText, setPendingSignatureText] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
@@ -110,12 +111,15 @@ export default function App() {
     showToast(`Extracted page ${pdf.currentPage}`);
   }, [pdf, showToast]);
 
-  const handleSaveSignature = useCallback((sigData: string) => {
-    setSavedSignatures((prev) => [...prev, sigData]);
-    showToast('Signature saved');
+  const handleSaveSignature = useCallback((sigData: string, sigText?: string) => {
+    setSavedSignatures((prev) => [...prev, { image: sigData, text: sigText }]);
+    setPendingSignatureText(sigText);
+    setActiveTool('signature');
+    showToast('Signature saved — click on the page to place it');
   }, [showToast]);
 
-  const handleSelectSignature = useCallback((sig: string) => {
+  const handleSelectSignature = useCallback((sig: { image: string; text?: string }) => {
+    setPendingSignatureText(sig.text);
     setActiveTool('signature');
     showToast('Signature selected — click on the page to place it');
   }, [showToast]);
@@ -262,6 +266,7 @@ export default function App() {
             fontSize={fontSize}
             opacity={opacity}
             pageRotations={pdf.pageRotations}
+            signatureText={pendingSignatureText}
           />
         ) : (
           <div className="viewer-container">

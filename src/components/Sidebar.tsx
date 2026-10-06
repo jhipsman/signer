@@ -18,8 +18,8 @@ interface Props {
   annotations: Annotation[];
   onDeleteAnnotation: (id: string) => void;
   onRotatePage: (page: number, degrees: number) => void;
-  savedSignatures: string[];
-  onSelectSignature: (sig: string) => void;
+  savedSignatures: Array<{ image: string; text?: string }>;
+  onSelectSignature: (sig: { image: string; text?: string }) => void;
 }
 
 const tabs: Array<{ id: SidebarTab; icon: React.FC; label: string }> = [
@@ -139,7 +139,7 @@ export default function Sidebar({
                 }}
                 onClick={() => onSelectSignature(sig)}
               >
-                <img src={sig} alt={`Signature ${i + 1}`} style={{ maxWidth: '100%', height: 40, objectFit: 'contain' }} />
+                <img src={sig.image} alt={`Signature ${i + 1}`} style={{ maxWidth: '100%', height: 40, objectFit: 'contain' }} />
               </div>
             ))}
           </div>
